@@ -1,3 +1,5 @@
+*.o*
+.s
 data/*
 result/*
 logs/*
