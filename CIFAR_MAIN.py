@@ -18,6 +18,7 @@ import copy
 from models.resnet_cifar_pact import *
 
 parser = argparse.ArgumentParser(description='PyTorch Cifar10 Training')
+parser.add_argument('--act', help='act type', action='store',default='BinAct')
 parser.add_argument('--epochs', default=200, type=int, metavar='N', help='number of total epochs to run')
 parser.add_argument('--start_epoch', default=0, type=int, metavar='N', help='manual epoch number (useful on restarts)')
 parser.add_argument('-b', '--batch-size', default=128, type=int, metavar='N', help='mini-batch size (default: 128),only used for train')
@@ -119,13 +120,24 @@ def main():
     global args, best_prec
     args = parser.parse_args()
     use_gpu = torch.cuda.is_available()
-    
+    if args.act == 'BinAct':
+        myBlock = BasicBlock_BinAct
+    elif args.act == 'FP':
+        myBlock = BasicBlock_FP
+    elif args.act == 'sig':
+        myBlock = BasicBlock_BinAct_sig
+    elif args.act == 'pact':
+        myBlock = BasicBlock_BinAct_pact
+    else:
+        print('unknow act type')
+        return 1
+ 
     # Model building
     print('=> Building model...')
     if use_gpu:
         # model can be set to anyone that I have defined in models folder
         # note the model should match to the cifar type !
-        model = ResNet_Cifar(BasicBlock,
+        model = ResNet_Cifar(myBlock,
                              [3, 3, 3], 
                              [args.quantize_layer1, args.quantize_layer2, args.quantize_layer3],
                              alpha=args.sigmoid_alpha,
@@ -334,15 +346,17 @@ def train(trainloader, model, criterion, optimizer, epoch, weight_thres):
     # scaled sigmoid argument increased as epochs, need to customized this function manually
     if args.use_alpha_decay: 
         for item in model.module.layer1.modules():
-            if isinstance(item, BasicBlock):
+            if isinstance(item, BasicBlock_FP) or isinstance(item, BasicBlock_BinAct) or isinstance(item, BasicBlock_BinAct_pact) or isinstance(item, BasicBlock_BinAct_sig):
                 item.binact1.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
                 item.binact2.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
         for item in model.module.layer2.modules():
-            if isinstance(item, BasicBlock):
+            #if isinstance(item, BasicBlock):
+            if isinstance(item, BasicBlock_FP) or isinstance(item, BasicBlock_BinAct) or isinstance(item, BasicBlock_BinAct_pact) or isinstance(item, BasicBlock_BinAct_sig):
                 item.binact1.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs       
                 item.binact2.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
         for item in model.module.layer3.modules():
-            if isinstance(item, BasicBlock):
+            #if isinstance(item, BasicBlock):
+            if isinstance(item, BasicBlock_FP) or isinstance(item, BasicBlock_BinAct) or isinstance(item, BasicBlock_BinAct_pact) or isinstance(item, BasicBlock_BinAct_sig):
                 item.binact1.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
                 item.binact2.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
 
