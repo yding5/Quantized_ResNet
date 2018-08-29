@@ -48,6 +48,7 @@ parser.add_argument('--loss_regu', help='relaxation parameter laied on loss regl
 parser.add_argument('--weight_thres', help='a weight threshold parameter using memorization', action='store', type=float,
                     default=0.1)
 parser.add_argument('--use_alpha_decay', help='enable alpha decay in sigmoid gradient', default=False, action='store_true')
+parser.add_argument('--use_quadratic_decay', help='enable quadratic alpha decay instead of linear decay', default=False, action='store_true')
 parser.add_argument('--start_alpha', help='starting scaling of sigmoid', action='store', type=float,
                     default=100)
 parser.add_argument('--end_alpha', help='ending scaling of sigmoid', action='store', type=float,
@@ -347,18 +348,30 @@ def train(trainloader, model, criterion, optimizer, epoch, weight_thres):
     if args.use_alpha_decay: 
         for item in model.module.layer1.modules():
             if isinstance(item, BasicBlock_FP) or isinstance(item, BasicBlock_BinAct) or isinstance(item, BasicBlock_BinAct_pact) or isinstance(item, BasicBlock_BinAct_sig):
-                item.binact1.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
-                item.binact2.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
+                if args.use_quadratic_decay:
+                    item.binact1.alpha = args.start_alpha + (epoch/args.epochs)**2*(args.end_alpha-args.start_alpha)
+                    item.binact2.alpha = args.start_alpha + (epoch/args.epochs)**2*(args.end_alpha-args.start_alpha)
+                else:
+                    item.binact1.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
+                    item.binact2.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
         for item in model.module.layer2.modules():
             #if isinstance(item, BasicBlock):
             if isinstance(item, BasicBlock_FP) or isinstance(item, BasicBlock_BinAct) or isinstance(item, BasicBlock_BinAct_pact) or isinstance(item, BasicBlock_BinAct_sig):
-                item.binact1.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs       
-                item.binact2.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
+                if args.use_quadratic_decay:
+                    item.binact1.alpha = args.start_alpha + (epoch/args.epochs)**2*(args.end_alpha-args.start_alpha)
+                    item.binact2.alpha = args.start_alpha + (epoch/args.epochs)**2*(args.end_alpha-args.start_alpha)
+                else:
+                    item.binact1.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
+                    item.binact2.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
         for item in model.module.layer3.modules():
             #if isinstance(item, BasicBlock):
             if isinstance(item, BasicBlock_FP) or isinstance(item, BasicBlock_BinAct) or isinstance(item, BasicBlock_BinAct_pact) or isinstance(item, BasicBlock_BinAct_sig):
-                item.binact1.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
-                item.binact2.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
+                if args.use_quadratic_decay:
+                    item.binact1.alpha = args.start_alpha + (epoch/args.epochs)**2*(args.end_alpha-args.start_alpha)
+                    item.binact2.alpha = args.start_alpha + (epoch/args.epochs)**2*(args.end_alpha-args.start_alpha)
+                else:
+                    item.binact1.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
+                    item.binact2.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
 
     for i, (input, target) in enumerate(trainloader):
         # measure data loading time
