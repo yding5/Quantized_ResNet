@@ -360,6 +360,66 @@ class BinActive_pact_sigmoid(torch.autograd.Function):
 
         return grad_input
 
+class BinActLayer_pact_sigmoid(nn.Module):
+    """ Customized activation layer quantization
+
+        Arguments: 
+            significant_bit: bit of activation layer quantization, default is 2
+            loss_regu: additional regularization term coefficient
+            alpha: argument of scaled sigmoid function, if applied
+    """
+    def __init__(self,significant_bit=2, loss_regu=0, alpha=1):
+        super(BinActLayer_pact_sigmoid, self).__init__()
+        self.significant_bit = significant_bit
+        self.loss_regu = loss_regu
+        self.alpha = alpha
+        self.pact_alpha = torch.cuda.FloatTensor(1)
+        self.pact_alpha[0] = pow(2,significant_bit)-1
+
+    def forward(self,input):
+        return BinActive_pact_sigmoid(significant_bit=self.significant_bit, loss_regu=self.loss_regu, alpha=self.alpha, pact_alpha=self.pact_alpha)(input)
+
+
+
+
+class BasicBlock_BinAct_pact_sigmoid(nn.Module):
+    expansion=1
+
+    def __init__(self, inplanes, planes, loss_regu=0.01, alpha=100,significant_bit=32, bit_threshold=10,  stride=1, downsample=None):
+        super(BasicBlock_BinAct_pact_sigmoid, self).__init__()
+        self.binact1 = BinActLayer_pact_sigmoid(significant_bit, loss_regu)
+        self.conv1 = conv3x3(inplanes, planes, stride)
+        self.bn1 = nn.BatchNorm2d(planes)
+        self.relu = nn.ReLU(inplace=True)
+        self.binact2 = BinActLayer_pact_sigmoid(significant_bit, loss_regu)
+        self.conv2 = conv3x3(planes, planes)
+        self.bn2 = nn.BatchNorm2d(planes)
+        self.downsample = downsample
+        self.stride = stride
+        self.significant_bit = significant_bit
+        self.bit_threshold = bit_threshold
+        self.use_sigmoid = True
+        self.loss_regu = loss_regu
+
+    def forward(self, x):
+        residual = x
+        x = self.binact1(x)
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+
+        out = self.binact2(out)
+        out = self.conv2(out)
+        out = self.bn2(out)
+
+        if self.downsample is not None:
+            residual = self.downsample(x)
+
+        out += residual
+        out = self.relu(out)
+
+        return out
+
 
 
 

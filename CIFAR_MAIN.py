@@ -128,6 +128,8 @@ def main():
         myBlock = BasicBlock_BinAct_sig
     elif args.act == 'pact':
         myBlock = BasicBlock_BinAct_pact
+    elif args.act == 'pact_sig':
+        myBlock = BasicBlock_BinAct_pact_sigmoid
     else:
         print('unknow act type')
         return 1
@@ -346,17 +348,17 @@ def train(trainloader, model, criterion, optimizer, epoch, weight_thres):
     # scaled sigmoid argument increased as epochs, need to customized this function manually
     if args.use_alpha_decay: 
         for item in model.module.layer1.modules():
-            if isinstance(item, BasicBlock_FP) or isinstance(item, BasicBlock_BinAct) or isinstance(item, BasicBlock_BinAct_pact) or isinstance(item, BasicBlock_BinAct_sig):
+            if isinstance(item, BasicBlock_BinAct) or isinstance(item, BasicBlock_BinAct_pact) or isinstance(item, BasicBlock_BinAct_sig):
                 item.binact1.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
                 item.binact2.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
         for item in model.module.layer2.modules():
             #if isinstance(item, BasicBlock):
-            if isinstance(item, BasicBlock_FP) or isinstance(item, BasicBlock_BinAct) or isinstance(item, BasicBlock_BinAct_pact) or isinstance(item, BasicBlock_BinAct_sig):
+            if isinstance(item, BasicBlock_BinAct) or isinstance(item, BasicBlock_BinAct_pact) or isinstance(item, BasicBlock_BinAct_sig):
                 item.binact1.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs       
                 item.binact2.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
         for item in model.module.layer3.modules():
             #if isinstance(item, BasicBlock):
-            if isinstance(item, BasicBlock_FP) or isinstance(item, BasicBlock_BinAct) or isinstance(item, BasicBlock_BinAct_pact) or isinstance(item, BasicBlock_BinAct_sig):
+            if isinstance(item, BasicBlock_BinAct) or isinstance(item, BasicBlock_BinAct_pact) or isinstance(item, BasicBlock_BinAct_sig):
                 item.binact1.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
                 item.binact2.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
 
