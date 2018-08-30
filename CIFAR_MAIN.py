@@ -349,16 +349,17 @@ def train(trainloader, model, criterion, optimizer, epoch, weight_thres):
     # scaled sigmoid argument increased as epochs, need to customized this function manually
     if args.use_alpha_decay: 
         for item in model.module.layer1.modules():
-            if isinstance(item, BasicBlock_pact_sigmoid) or isinstance(item, BasicBlock_BinAct) or isinstance(item, BasicBlock_BinAct_pact) or isinstance(item, BasicBlock_BinAct_sig):
+            if isinstance(item, BasicBlock_BinAct_pact_sigmoid) or isinstance(item, BasicBlock_BinAct) or isinstance(item, BasicBlock_BinAct_pact) or isinstance(item, BasicBlock_BinAct_sig):
                 if args.use_quadratic_decay:
                     item.binact1.alpha = args.start_alpha + (epoch/args.epochs)**2*(args.end_alpha-args.start_alpha)
                     item.binact2.alpha = args.start_alpha + (epoch/args.epochs)**2*(args.end_alpha-args.start_alpha)
+                    print(item.binact2.alpha)
                 else:
                     item.binact1.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
                     item.binact2.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
         for item in model.module.layer2.modules():
             #if isinstance(item, BasicBlock):
-            if isinstance(item, BasicBlock_pact_sigmoid) or isinstance(item, BasicBlock_BinAct) or isinstance(item, BasicBlock_BinAct_pact) or isinstance(item, BasicBlock_BinAct_sig):
+            if isinstance(item, BasicBlock_BinAct_pact_sigmoid) or isinstance(item, BasicBlock_BinAct) or isinstance(item, BasicBlock_BinAct_pact) or isinstance(item, BasicBlock_BinAct_sig):
                 if args.use_quadratic_decay:
                     item.binact1.alpha = args.start_alpha + (epoch/args.epochs)**2*(args.end_alpha-args.start_alpha)
                     item.binact2.alpha = args.start_alpha + (epoch/args.epochs)**2*(args.end_alpha-args.start_alpha)
@@ -367,7 +368,7 @@ def train(trainloader, model, criterion, optimizer, epoch, weight_thres):
                     item.binact2.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
         for item in model.module.layer3.modules():
             #if isinstance(item, BasicBlock):
-            if isinstance(item, BasicBlock_pact_sigmoid) or isinstance(item, BasicBlock_BinAct) or isinstance(item, BasicBlock_BinAct_pact) or isinstance(item, BasicBlock_BinAct_sig):
+            if isinstance(item, BasicBlock_BinAct_pact_sigmoid) or isinstance(item, BasicBlock_BinAct) or isinstance(item, BasicBlock_BinAct_pact) or isinstance(item, BasicBlock_BinAct_sig):
                 if args.use_quadratic_decay:
                     item.binact1.alpha = args.start_alpha + (epoch/args.epochs)**2*(args.end_alpha-args.start_alpha)
                     item.binact2.alpha = args.start_alpha + (epoch/args.epochs)**2*(args.end_alpha-args.start_alpha)
