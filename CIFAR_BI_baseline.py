@@ -15,10 +15,9 @@ import torchvision
 import torchvision.transforms as transforms
 import copy
 # from models import *
-from models.resnet_cifar_pact import *
+from models.BI_baseline import *
 
 parser = argparse.ArgumentParser(description='PyTorch Cifar10 Training')
-parser.add_argument('--act', help='act type', action='store',default='BinAct')
 parser.add_argument('--epochs', default=200, type=int, metavar='N', help='number of total epochs to run')
 parser.add_argument('--start_epoch', default=0, type=int, metavar='N', help='manual epoch number (useful on restarts)')
 parser.add_argument('-b', '--batch-size', default=128, type=int, metavar='N', help='mini-batch size (default: 128),only used for train')
@@ -48,7 +47,6 @@ parser.add_argument('--loss_regu', help='relaxation parameter laied on loss regl
 parser.add_argument('--weight_thres', help='a weight threshold parameter using memorization', action='store', type=float,
                     default=0.1)
 parser.add_argument('--use_alpha_decay', help='enable alpha decay in sigmoid gradient', default=False, action='store_true')
-parser.add_argument('--use_quadratic_decay', help='enable quadratic alpha decay instead of linear decay', default=False, action='store_true')
 parser.add_argument('--start_alpha', help='starting scaling of sigmoid', action='store', type=float,
                     default=100)
 parser.add_argument('--end_alpha', help='ending scaling of sigmoid', action='store', type=float,
@@ -121,26 +119,13 @@ def main():
     global args, best_prec
     args = parser.parse_args()
     use_gpu = torch.cuda.is_available()
-    if args.act == 'BinAct':
-        myBlock = BasicBlock_BinAct
-    elif args.act == 'FP':
-        myBlock = BasicBlock_FP
-    elif args.act == 'sig':
-        myBlock = BasicBlock_BinAct_sig
-    elif args.act == 'pact':
-        myBlock = BasicBlock_BinAct_pact
-    elif args.act == 'pact_sig':
-        myBlock = BasicBlock_BinAct_pact_sigmoid
-    else:
-        print('unknow act type')
-        return 1
- 
+    
     # Model building
     print('=> Building model...')
     if use_gpu:
         # model can be set to anyone that I have defined in models folder
         # note the model should match to the cifar type !
-        model = ResNet_Cifar(myBlock,
+        model = ResNet_Cifar(BasicBlock,
                              [3, 3, 3], 
                              [args.quantize_layer1, args.quantize_layer2, args.quantize_layer3],
                              alpha=args.sigmoid_alpha,
@@ -349,31 +334,17 @@ def train(trainloader, model, criterion, optimizer, epoch, weight_thres):
     # scaled sigmoid argument increased as epochs, need to customized this function manually
     if args.use_alpha_decay: 
         for item in model.module.layer1.modules():
-            if isinstance(item, BasicBlock_pact_sigmoid) or isinstance(item, BasicBlock_BinAct) or isinstance(item, BasicBlock_BinAct_pact) or isinstance(item, BasicBlock_BinAct_sig):
-                if args.use_quadratic_decay:
-                    item.binact1.alpha = args.start_alpha + (epoch/args.epochs)**2*(args.end_alpha-args.start_alpha)
-                    item.binact2.alpha = args.start_alpha + (epoch/args.epochs)**2*(args.end_alpha-args.start_alpha)
-                else:
-                    item.binact1.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
-                    item.binact2.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
+            if isinstance(item, BasicBlock):
+                item.binact1.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
+                item.binact2.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
         for item in model.module.layer2.modules():
-            #if isinstance(item, BasicBlock):
-            if isinstance(item, BasicBlock_pact_sigmoid) or isinstance(item, BasicBlock_BinAct) or isinstance(item, BasicBlock_BinAct_pact) or isinstance(item, BasicBlock_BinAct_sig):
-                if args.use_quadratic_decay:
-                    item.binact1.alpha = args.start_alpha + (epoch/args.epochs)**2*(args.end_alpha-args.start_alpha)
-                    item.binact2.alpha = args.start_alpha + (epoch/args.epochs)**2*(args.end_alpha-args.start_alpha)
-                else:
-                    item.binact1.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
-                    item.binact2.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
+            if isinstance(item, BasicBlock):
+                item.binact1.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs       
+                item.binact2.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
         for item in model.module.layer3.modules():
-            #if isinstance(item, BasicBlock):
-            if isinstance(item, BasicBlock_pact_sigmoid) or isinstance(item, BasicBlock_BinAct) or isinstance(item, BasicBlock_BinAct_pact) or isinstance(item, BasicBlock_BinAct_sig):
-                if args.use_quadratic_decay:
-                    item.binact1.alpha = args.start_alpha + (epoch/args.epochs)**2*(args.end_alpha-args.start_alpha)
-                    item.binact2.alpha = args.start_alpha + (epoch/args.epochs)**2*(args.end_alpha-args.start_alpha)
-                else:
-                    item.binact1.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
-                    item.binact2.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
+            if isinstance(item, BasicBlock):
+                item.binact1.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
+                item.binact2.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
 
     for i, (input, target) in enumerate(trainloader):
         # measure data loading time

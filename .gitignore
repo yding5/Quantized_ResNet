@@ -1,5 +1,6 @@
-*.o*
 *.pyc
+*.o*
+*.s
 data/*
 result/*
 logs/*
