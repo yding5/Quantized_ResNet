@@ -1,3 +1,5 @@
+*.o*
+*.pyc
 data/*
 result/*
 logs/*
