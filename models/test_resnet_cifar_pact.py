@@ -16,6 +16,42 @@ def conv3x3(in_planes, out_planes, stride=1):
     " 3x3 convolution with padding "
     return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride, padding=1, bias=False)
 
+class BinActive_sigmoid(torch.autograd.Function):
+    """ Quantized activation operation
+
+        Arguments:
+            significant_bit: bit of quantization, default: 2-bit
+            loss_regu: loss regularization term coefficient, currently not applied
+    """    
+
+    def __init__(self, significant_bit=2,loss_regu=0,alpha=1,pact_alpha=None):
+        self.significant_bit = significant_bit
+        self.threshold = pow(2, self.significant_bit)-1
+        self.lb = 0
+        self.rb = pow(2, self.significant_bit)-1
+        self.alpha = alpha
+        
+
+    def forward(self, input):
+        self.save_for_backward(input)
+        input_mod = torch.round(input.data)
+        input_mod.data[input_mod.data.ge(self.rb)] = self.rb
+        input_mod.data[input_mod.data.le(self.lb)] = self.lb
+        return input_mod
+
+    def backward(self, grad_output):
+        input, = self.saved_tensors
+        grad_input = grad_output.clone()
+        buf = torch.add(input,-0.5) - torch.round(torch.add(input,-0.5))
+        temp_constant = 1/(2*(1/(1+math.exp(-1*self.alpha/2)))-1)
+        grad = temp_constant*self.alpha*torch.exp(-1*self.alpha*buf)/torch.pow(torch.add(torch.exp(-1*self.alpha*buf),1),2)
+        grad_input.data.mul_(grad)
+        grad_input[input.ge(self.rb)] = 0
+        grad_input[input.le(self.lb)] = 0
+
+        return grad_input
+
+
 class BinActive(torch.autograd.Function):
     """ Quantized activation operation
 
@@ -33,106 +69,6 @@ class BinActive(torch.autograd.Function):
 
     def forward(self, input):
         self.save_for_backward(input)
-        #input_mod = input.clone()
-        input_mod = torch.clamp(input, self.lb, self.rb)
-        input_mod = torch.round(input.data)
-        #input_mod.data[input_mod.data.ge(self.rb)] = self.rb
-        #input_mod.data[input_mod.data.le(self.lb)] = self.lb
-        return input_mod
-
-    def backward(self, grad_output):
-        input, = self.saved_tensors
-        grad_input = grad_output.clone()
-        #print(grad_input[0][0][0])
-        my_grad_input = grad_input*(input.le(self.lb)^1).float()
-        my_grad_input = my_grad_input*(input.ge(self.rb)^1).float()
-        #grad_input[input.ge(self.rb)] = 0.0
-        #grad_input[input.le(self.lb)] = 0.0
-        #print(grad_input[0][0][0])
-        #if not torch.equal(my_grad_input, grad_input):
-        #    print("not good!!")
-        #    print(input.ge(self.rb)[0])
-        #    print(input.le(self.lb)[0])
-        #    print(my_grad_input[0])
-        #    print(grad_input[0])
-        return my_grad_input
-
-class BinActLayer_baseline(nn.Module):
-    """ Customized activation layer quantization
-
-        Arguments: 
-            significant_bit: bit of activation layer quantization, default is 2
-            loss_regu: additional regularization term coefficient
-            alpha: argument of scaled sigmoid function, if applied
-    """
-    def __init__(self,significant_bit=2, loss_regu=0, alpha=1):
-        super(BinActLayer_baseline, self).__init__()
-        self.significant_bit = significant_bit
-        self.loss_regu = loss_regu
-        self.alpha = alpha
-        self.pact_alpha = torch.cuda.FloatTensor(1)
-        self.pact_alpha[0] = pow(2,significant_bit)-1
-
-    def forward(self,input):
-        return BinActive(significant_bit=self.significant_bit, loss_regu=self.loss_regu, alpha=self.alpha, pact_alpha=self.pact_alpha)(input)
-    
-    
-class BasicBlock_BinAct(nn.Module):
-    expansion=1
-
-    def __init__(self, inplanes, planes, loss_regu=0.01, alpha=100,significant_bit=32, bit_threshold=10,  stride=1, downsample=None):
-        super(BasicBlock_BinAct, self).__init__()
-        self.binact1 = BinActLayer_baseline(significant_bit, loss_regu)
-        self.conv1 = conv3x3(inplanes, planes, stride)
-        self.bn1 = nn.BatchNorm2d(planes)
-        self.relu = nn.ReLU(inplace=True)
-        self.binact2 = BinActLayer_baseline(significant_bit, loss_regu)
-        self.conv2 = conv3x3(planes, planes)
-        self.bn2 = nn.BatchNorm2d(planes)
-        self.downsample = downsample
-        self.stride = stride
-        self.significant_bit = significant_bit
-        self.bit_threshold = bit_threshold
-        self.use_sigmoid = True
-        self.loss_regu = loss_regu
-
-    def forward(self, x):
-        residual = x
-        x = self.binact1(x)
-        out = self.conv1(x)
-        out = self.bn1(out)
-        out = self.relu(out)
-        
-        out = self.binact2(out)
-        out = self.conv2(out)
-        out = self.bn2(out)
-
-        if self.downsample is not None:
-            residual = self.downsample(x)
-
-        out += residual
-        out = self.relu(out)
-
-        return out
-
-    
-class BinActive_sigmoid(torch.autograd.Function):
-    """ Quantized activation operation
-
-        Arguments:
-            significant_bit: bit of quantization, default: 2-bit
-            loss_regu: loss regularization term coefficient, currently not applied
-    """
-
-    def __init__(self, significant_bit=2,loss_regu=0,alpha=1,pact_alpha=None):
-        self.significant_bit = significant_bit
-        self.threshold = pow(2, self.significant_bit)-1
-        self.lb = 0
-        self.rb = pow(2, self.significant_bit)-1
-        self.alpha = alpha
-
-    def forward(self, input):
-        self.save_for_backward(input)
         input_mod = torch.round(input.data)
         input_mod.data[input_mod.data.ge(self.rb)] = self.rb
         input_mod.data[input_mod.data.le(self.lb)] = self.lb
@@ -141,71 +77,68 @@ class BinActive_sigmoid(torch.autograd.Function):
     def backward(self, grad_output):
         input, = self.saved_tensors
         grad_input = grad_output.clone()
-        buf = torch.add(input,-0.5)-torch.round(torch.add(input,-0.5))
-        temp_constant = 1/(2*(1/(1+math.exp(-1*self.alpha/2)))-1)
-        grad = temp_constant*self.alpha*torch.exp(-1*self.alpha*buf)/torch.pow(torch.add(torch.exp(-1*self.alpha*buf),1),2)
-        grad_input.data.mul_(grad)
-
         grad_input[input.ge(self.rb)] = 0
         grad_input[input.le(self.lb)] = 0
         return grad_input
 
-class BinActLayer_sigmoid(nn.Module):
-    """ Customized activation layer quantization
+class BinActive_pact_sigmoid(torch.autograd.Function):
+    """ Quantized activation operation using sigmoid esitmator to calculate gradient of step function
 
-        Arguments: 
-            significant_bit: bit of activation layer quantization, default is 2
-            loss_regu: additional regularization term coefficient
-            alpha: argument of scaled sigmoid function, if applied
-    """
-    def __init__(self,significant_bit=2, loss_regu=0, alpha=1):
-        super(BinActLayer_sigmoid, self).__init__()
+        Arguments:
+            significant_bit: bit of quantization, default: 2-bit
+            loss_regu: loss regularization term coefficient, currently not applied
+            alpha: argument of scaled sigmoid function
+            pact_alpha: a trainable clipping parameter in PACT
+    """ 
+
+    def __init__(self, significant_bit=2,loss_regu=0.01,alpha=1,pact_alpha=None):
         self.significant_bit = significant_bit
-        self.loss_regu = loss_regu
+        self.threshold = pow(2, self.significant_bit)-1
+        self.lb = 0.0
+        self.rb = pow(2, self.significant_bit)-1.0
+        self.loss_regu=loss_regu
+        if pact_alpha is None:
+            self.activation_threshold = torch.cuda.FloatTensor(1)
+            self.activation_threshold[0] = self.rb
+        else:
+            self.activation_threshold = pact_alpha 
+        # TODO: add function interface
+        self.activation_lr = 1e-2
+        self.activation_regu = 1e-4
         self.alpha = alpha
-        self.pact_alpha = torch.cuda.FloatTensor(1)
-        self.pact_alpha[0] = pow(2,significant_bit)-1
 
-    def forward(self,input):
-        return BinActive_sigmoid(significant_bit=self.significant_bit, loss_regu=self.loss_regu, alpha=self.alpha, pact_alpha=self.pact_alpha)(input)
+    def forward(self, input):
+        input_mod = input.clone()
+        self.save_for_backward(input)
+        input_mod.data.mul_(self.rb/(1e-6+self.activation_threshold))
+        input_mod.data = torch.round(input_mod.data)
+        input_mod.data[input_mod.ge(self.rb)] = self.rb
+        input_mod.data[input_mod.le(self.lb)] = self.lb
+        input_mod.data.mul_((self.activation_threshold)/self.rb)
+        return input_mod
 
-class BasicBlock_BinAct_sig(nn.Module):
-    expansion=1
+    def backward(self, grad_output):
+        input, = self.saved_tensors
+        grad_input = grad_output.clone()
+        grad_input[input.ge(self.activation_threshold[0])] = 0
+        grad_input[input.le(0)] = 0
 
-    def __init__(self, inplanes, planes, loss_regu=0.01, alpha=100,significant_bit=32, bit_threshold=10,  stride=1, downsample=None):
-        super(BasicBlock_BinAct_sig, self).__init__()
-        self.binact1 = BinActLayer_sigmoid(significant_bit, loss_regu)
-        self.conv1 = conv3x3(inplanes, planes, stride)
-        self.bn1 = nn.BatchNorm2d(planes)
-        self.relu = nn.ReLU(inplace=True)
-        self.binact2 = BinActLayer_sigmoid(significant_bit, loss_regu)
-        self.conv2 = conv3x3(planes, planes)
-        self.bn2 = nn.BatchNorm2d(planes)
-        self.downsample = downsample
-        self.stride = stride
-        self.significant_bit = significant_bit
-        self.bit_threshold = bit_threshold
-        self.use_sigmoid = True
-        self.loss_regu = loss_regu
+        alpha = self.alpha * (self.rb / self.activation_threshold[0])
+        buf = torch.add(input*self.rb/self.activation_threshold[0],-0.5)-torch.round(torch.add(input*self.rb/self.activation_threshold[0],-0.5))
+        buf.mul_(self.activation_threshold[0]/self.rb)
+        temp_constant = 1/(2*(1/(1+math.exp(-1*alpha/2)))-1)
+        grad = temp_constant*alpha*torch.exp(-1*alpha*buf)/torch.pow(torch.add(torch.exp(-1*alpha*buf),1),2)
+        grad_input.data.mul_(grad/alpha) 
+        """fix bug by dividing alpha on 08/21/2018, by WW """
 
-    def forward(self, x):
-        residual = x
-        x = self.binact1(x)
-        out = self.conv1(x)
-        out = self.bn1(out)
-        out = self.relu(out)
-        
-        out = self.binact2(out)
-        out = self.conv2(out)
-        out = self.bn2(out)
+        grad_alpha = grad_output.clone()
+        grad_alpha[input.le(self.activation_threshold[0])] = 0
+        grad_pact = torch.sum(grad_alpha)+2*self.activation_regu*self.activation_threshold[0]
+        self.activation_threshold -= self.activation_lr * grad_pact
 
-        if self.downsample is not None:
-            residual = self.downsample(x)
+        return grad_input
 
-        out += residual
-        out = self.relu(out)
 
-        return out
 
 class BinActive_pact(torch.autograd.Function):
     """ Implementation of quantized activation in PACT
@@ -257,322 +190,6 @@ class BinActive_pact(torch.autograd.Function):
 
         return grad_input
     
-class BinActLayer_pact(nn.Module):
-    """ Customized activation layer quantization
-
-        Arguments: 
-            significant_bit: bit of activation layer quantization, default is 2
-            loss_regu: additional regularization term coefficient
-            alpha: argument of scaled sigmoid function, if applied
-    """
-    def __init__(self,significant_bit=2, loss_regu=0, alpha=1):
-        super(BinActLayer_pact, self).__init__()
-        self.significant_bit = significant_bit
-        self.loss_regu = loss_regu
-        self.alpha = alpha
-        self.pact_alpha = torch.cuda.FloatTensor(1)
-        self.pact_alpha[0] = pow(2,significant_bit)-1
-
-    def forward(self,input):
-        return BinActive_pact(significant_bit=self.significant_bit, loss_regu=self.loss_regu, alpha=self.alpha, pact_alpha=self.pact_alpha)(input)
-
-class BasicBlock_BinAct_pact(nn.Module):
-    expansion=1
-
-    def __init__(self, inplanes, planes, loss_regu=0.01, alpha=100,significant_bit=32, bit_threshold=10,  stride=1, downsample=None):
-        super(BasicBlock_BinAct_pact, self).__init__()
-        self.binact1 = BinActLayer_pact(significant_bit, loss_regu)
-        self.conv1 = conv3x3(inplanes, planes, stride)
-        self.bn1 = nn.BatchNorm2d(planes)
-        self.relu = nn.ReLU(inplace=True)
-        self.binact2 = BinActLayer_pact(significant_bit, loss_regu)
-        self.conv2 = conv3x3(planes, planes)
-        self.bn2 = nn.BatchNorm2d(planes)
-        self.downsample = downsample
-        self.stride = stride
-        self.significant_bit = significant_bit
-        self.bit_threshold = bit_threshold
-        self.use_sigmoid = True
-        self.loss_regu = loss_regu
-
-    def forward(self, x):
-        residual = x
-        x = self.binact1(x)
-        out = self.conv1(x)
-        out = self.bn1(out)
-        out = self.relu(out)
-        
-        out = self.binact2(out)
-        out = self.conv2(out)
-        out = self.bn2(out)
-
-        if self.downsample is not None:
-            residual = self.downsample(x)
-
-        out += residual
-        out = self.relu(out)
-
-        return out
-    
-    
-class BinActive_pact_sigmoid(torch.autograd.Function):
-    """ Quantized activation operation using sigmoid esitmator to calculate gradient of step function
-
-        Arguments:
-            significant_bit: bit of quantization, default: 2-bit
-            loss_regu: loss regularization term coefficient, currently not applied
-            alpha: argument of scaled sigmoid function
-            pact_alpha: a trainable clipping parameter in PACT
-    """ 
-
-    def __init__(self, significant_bit=2,loss_regu=0.01,alpha=1,pact_alpha=None):
-        self.significant_bit = significant_bit
-        self.threshold = pow(2, self.significant_bit)-1
-        self.lb = 0.0
-        self.rb = pow(2, self.significant_bit)-1.0
-        self.loss_regu=loss_regu
-        if pact_alpha is None:
-            self.activation_threshold = torch.cuda.FloatTensor(1)
-            self.activation_threshold[0] = self.rb
-        else:
-            self.activation_threshold = pact_alpha 
-        # TODO: add function interface
-        self.activation_lr = 1e-2
-        self.activation_regu = 1e-4
-        self.alpha = alpha
-
-    def forward(self, input):
-        input_mod = input.clone()
-        self.save_for_backward(input)
-        input_mod.data.mul_(self.rb/(1e-6+self.activation_threshold))
-        input_mod.data = torch.round(input_mod.data)
-        input_mod.data[input_mod.ge(self.rb)] = self.rb
-        input_mod.data[input_mod.le(self.lb)] = self.lb
-        input_mod.data.mul_((self.activation_threshold)/self.rb)
-        return input_mod
-
-
-    def backward(self, grad_output):
-        input, = self.saved_tensors
-        grad_input = grad_output.clone()
-        grad_input[input.ge(self.activation_threshold[0])] = 0
-        grad_input[input.le(0)] = 0
-
-        alpha = self.alpha * (self.rb / self.activation_threshold[0])
-        buf = torch.add(input*self.rb/self.activation_threshold[0],-0.5)-torch.round(torch.add(input*self.rb/self.activation_threshold[0],-0.5))
-        buf.mul_(self.activation_threshold[0]/self.rb)
-        my_buf = torch.add(input*self.rb/self.activation_threshold,-0.5)-torch.round(torch.add(input*self.rb/self.activation_threshold,-0.5))
-        #print('act_threshold',self.activation_threshold[0])
-        #print('rb/act.threshold', self.rb / self.activation_threshold[0])
-        #print('alpha',alpha.data)
-        #print('exp(-alpha/2)',math.exp(-1*alpha/2))
-        temp_constant = 1/(2*(1/(1+math.exp(-1*alpha/2)))-1)
-        my_temp_constant = 1/(2*(1/(1+math.exp(-1*self.alpha/2)))-1)
-        grad = temp_constant*alpha*torch.exp(-1*alpha*buf)/torch.pow(torch.add(torch.exp(-1*alpha*buf),1),2)
-        my_grad = my_temp_constant*self.alpha*torch.exp(-1*self.alpha*buf)/torch.pow(torch.add(torch.exp(-1*self.alpha*buf),1),2)
-        my_grad_input = grad_input*my_grad
-        grad_input.data.mul_(grad/alpha) 
-        #if torch.equal(my_grad_input, grad_input):
-        #    print('good')
-        #else:
-        #    print('not good')
-        #    print(my_grad_input.data[0][0][0])
-        #    print(grad_input.data[0][0][0])
-        """fix bug by dividing alpha on 08/21/2018, by WW """
-        grad_alpha = grad_output.clone()
-        grad_alpha[input.le(self.activation_threshold[0])] = 0
-        grad_pact = torch.sum(grad_alpha)+2*self.activation_regu*self.activation_threshold[0]
-        grad_pact = torch.sum(grad_alpha)+self.activation_regu*self.activation_threshold[0]**2
-        if self.activation_threshold.data<0.5:
-            print('activation_threshold too small!!!!')
-        #print(grad_pact)
-        #print(self.activation_threshold)
-        self.activation_threshold -= self.activation_lr * grad_pact
-
-        return my_grad_input
-
-class BinActLayer_pact_sigmoid(nn.Module):
-    """ Customized activation layer quantization
-
-        Arguments: 
-            significant_bit: bit of activation layer quantization, default is 2
-            loss_regu: additional regularization term coefficient
-            alpha: argument of scaled sigmoid function, if applied
-    """
-    def __init__(self,significant_bit=2, loss_regu=0, alpha=1):
-        super(BinActLayer_pact_sigmoid, self).__init__()
-        self.significant_bit = significant_bit
-        self.loss_regu = loss_regu
-        self.alpha = alpha
-        self.pact_alpha = torch.cuda.FloatTensor(1)
-#        self.pact_alpha[0] = pow(2,significant_bit)-1
-        self.pact_alpha[0] = 10
-
-    def forward(self,input):
-        return BinActive_pact_sigmoid(significant_bit=self.significant_bit, loss_regu=self.loss_regu, alpha=self.alpha, pact_alpha=self.pact_alpha)(input)
-
-
-
-
-class BasicBlock_BinAct_pact_sigmoid(nn.Module):
-    expansion=1
-
-    def __init__(self, inplanes, planes, loss_regu=0.01, alpha=100,significant_bit=32, bit_threshold=10,  stride=1, downsample=None):
-        super(BasicBlock_BinAct_pact_sigmoid, self).__init__()
-        self.binact1 = BinActLayer_pact_sigmoid(significant_bit, loss_regu)
-        self.conv1 = conv3x3(inplanes, planes, stride)
-        self.bn1 = nn.BatchNorm2d(planes)
-        self.relu = nn.ReLU(inplace=True)
-        self.binact2 = BinActLayer_pact_sigmoid(significant_bit, loss_regu)
-        self.conv2 = conv3x3(planes, planes)
-        self.bn2 = nn.BatchNorm2d(planes)
-        self.downsample = downsample
-        self.stride = stride
-        self.significant_bit = significant_bit
-        self.bit_threshold = bit_threshold
-        self.use_sigmoid = True
-        self.loss_regu = loss_regu
-
-    def forward(self, x):
-        residual = x
-        x = self.binact1(x)
-        out = self.conv1(x)
-        out = self.bn1(out)
-        out = self.relu(out)
-
-        out = self.binact2(out)
-        out = self.conv2(out)
-        out = self.bn2(out)
-
-        if self.downsample is not None:
-            residual = self.downsample(x)
-
-        out += residual
-        out = self.relu(out)
-
-        return out
-
-
-class BinActive_pact_sigmoid_lr0(torch.autograd.Function):
-    """ Quantized activation operation using sigmoid esitmator to calculate gradient of step function
-
-        Arguments:
-            significant_bit: bit of quantization, default: 2-bit
-            loss_regu: loss regularization term coefficient, currently not applied
-            alpha: argument of scaled sigmoid function
-            pact_alpha: a trainable clipping parameter in PACT
-    """ 
-
-    def __init__(self, significant_bit=2,loss_regu=0.01,alpha=1,pact_alpha=None):
-        self.significant_bit = significant_bit
-        self.threshold = pow(2, self.significant_bit)-1
-        self.lb = 0.0
-        self.rb = pow(2, self.significant_bit)-1.0
-        self.loss_regu=loss_regu
-        if pact_alpha is None:
-            self.activation_threshold = torch.cuda.FloatTensor(1)
-            self.activation_threshold[0] = self.rb
-        else:
-            self.activation_threshold = pact_alpha 
-        # TODO: add function interface
-        #self.activation_lr = 1e-2
-        self.activation_lr = 0
-        self.activation_regu = 1e-4
-        self.alpha = alpha
-
-    def forward(self, input):
-        input_mod = input.clone()
-        self.save_for_backward(input)
-        input_mod.data.mul_(self.rb/(1e-6+self.activation_threshold))
-        input_mod.data = torch.round(input_mod.data)
-        input_mod.data[input_mod.ge(self.rb)] = self.rb
-        input_mod.data[input_mod.le(self.lb)] = self.lb
-        input_mod.data.mul_((self.activation_threshold)/self.rb)
-        return input_mod
-
-    def backward(self, grad_output):
-        input, = self.saved_tensors
-        grad_input = grad_output.clone()
-        grad_input[input.ge(self.activation_threshold[0])] = 0
-        grad_input[input.le(0)] = 0
-
-        alpha = self.alpha * (self.rb / self.activation_threshold[0])
-        buf = torch.add(input*self.rb/self.activation_threshold[0],-0.5)-torch.round(torch.add(input*self.rb/self.activation_threshold[0],-0.5))
-        buf.mul_(self.activation_threshold[0]/self.rb)
-        temp_constant = 1/(2*(1/(1+math.exp(-1*alpha/2)))-1)
-        grad = temp_constant*alpha*torch.exp(-1*alpha*buf)/torch.pow(torch.add(torch.exp(-1*alpha*buf),1),2)
-        grad_input.data.mul_(grad/alpha) 
-        """fix bug by dividing alpha on 08/21/2018, by WW """
-
-        grad_alpha = grad_output.clone()
-        grad_alpha[input.le(self.activation_threshold[0])] = 0
-        grad_pact = torch.sum(grad_alpha)+2*self.activation_regu*self.activation_threshold[0]
-        self.activation_threshold -= self.activation_lr * grad_pact
-
-        return grad_input
-
-class BinActLayer_pact_sigmoid_lr0(nn.Module):
-    """ Customized activation layer quantization
-
-        Arguments: 
-            significant_bit: bit of activation layer quantization, default is 2
-            loss_regu: additional regularization term coefficient
-            alpha: argument of scaled sigmoid function, if applied
-    """
-    def __init__(self,significant_bit=2, loss_regu=0, alpha=1):
-        super(BinActLayer_pact_sigmoid_lr0, self).__init__()
-        self.significant_bit = significant_bit
-        self.loss_regu = loss_regu
-        self.alpha = alpha
-        self.pact_alpha = torch.cuda.FloatTensor(1)
-        self.pact_alpha[0] = pow(2,significant_bit)-1
-
-    def forward(self,input):
-        return BinActive_pact_sigmoid_lr0(significant_bit=self.significant_bit, loss_regu=self.loss_regu, alpha=self.alpha, pact_alpha=self.pact_alpha)(input)
-
-
-
-
-class BasicBlock_BinAct_pact_sigmoid_lr0(nn.Module):
-    expansion=1
-
-    def __init__(self, inplanes, planes, loss_regu=0.01, alpha=100,significant_bit=32, bit_threshold=10,  stride=1, downsample=None):
-        super(BasicBlock_BinAct_pact_sigmoid_lr0, self).__init__()
-        self.binact1 = BinActLayer_pact_sigmoid_lr0(significant_bit, loss_regu)
-        self.conv1 = conv3x3(inplanes, planes, stride)
-        self.bn1 = nn.BatchNorm2d(planes)
-        self.relu = nn.ReLU(inplace=True)
-        self.binact2 = BinActLayer_pact_sigmoid_lr0(significant_bit, loss_regu)
-        self.conv2 = conv3x3(planes, planes)
-        self.bn2 = nn.BatchNorm2d(planes)
-        self.downsample = downsample
-        self.stride = stride
-        self.significant_bit = significant_bit
-        self.bit_threshold = bit_threshold
-        self.use_sigmoid = True
-        self.loss_regu = loss_regu
-
-    def forward(self, x):
-        residual = x
-        x = self.binact1(x)
-        out = self.conv1(x)
-        out = self.bn1(out)
-        out = self.relu(out)
-
-        out = self.binact2(out)
-        out = self.conv2(out)
-        out = self.bn2(out)
-
-        if self.downsample is not None:
-            residual = self.downsample(x)
-
-        out += residual
-        out = self.relu(out)
-
-        return out
-
-
-
 
 class BinActive_pact_exponential(torch.autograd.Function):
     """ Quantized activation, using exponent quantization
@@ -621,40 +238,35 @@ class BinActive_pact_exponential(torch.autograd.Function):
         return grad_input
 
 
+class BinActLayer(nn.Module):
+    """ Customized activation layer quantization
 
+        Arguments: 
+            significant_bit: bit of activation layer quantization, default is 2
+            loss_regu: additional regularization term coefficient
+            alpha: argument of scaled sigmoid function, if applied
+    """
+    def __init__(self,significant_bit=2, loss_regu=0, alpha=1):
+        super(BinActLayer, self).__init__()
+        self.significant_bit = significant_bit
+        self.loss_regu = loss_regu
+        self.alpha = alpha
+        self.pact_alpha = torch.cuda.FloatTensor(1)
+        self.pact_alpha[0] = pow(2,significant_bit)-1
 
-#class BinActLayer(nn.Module):
-#    """ Customized activation layer quantization
-#
-#        Arguments: 
-#            significant_bit: bit of activation layer quantization, default is 2
-#            loss_regu: additional regularization term coefficient
-#            alpha: argument of scaled sigmoid function, if applied
-#    """
-#    def __init__(self,significant_bit=2, loss_regu=0, alpha=1):
-#        super(BinActLayer, self).__init__()
-#        self.significant_bit = significant_bit
-#        self.loss_regu = loss_regu
-#        self.alpha = alpha
-#        self.pact_alpha = torch.cuda.FloatTensor(1)
-#        self.pact_alpha[0] = pow(2,significant_bit)-1
-#
-#    def forward(self,input):
-#        return BinActive(significant_bit=self.significant_bit, loss_regu=self.loss_regu, alpha=self.alpha, pact_alpha=self.pact_alpha)(input)
+    def forward(self,input):
+        return BinActive_sigmoid(significant_bit=self.significant_bit, loss_regu=self.loss_regu, alpha=self.alpha, pact_alpha=self.pact_alpha)(input)
 
-
-
-
-class BasicBlock_FP(nn.Module):
+class BasicBlock(nn.Module):
     expansion=1
 
     def __init__(self, inplanes, planes, loss_regu=0.01, alpha=100,significant_bit=32, bit_threshold=10,  stride=1, downsample=None):
-        super(BasicBlock_FP, self).__init__()
-        #self.binact1 = BinActLayer(significant_bit, loss_regu)
+        super(BasicBlock, self).__init__()
+        self.binact1 = BinActLayer(significant_bit, loss_regu)
         self.conv1 = conv3x3(inplanes, planes, stride)
         self.bn1 = nn.BatchNorm2d(planes)
         self.relu = nn.ReLU(inplace=True)
-        #self.binact2 = BinActLayer(significant_bit, loss_regu)
+        self.binact2 = BinActLayer(significant_bit, loss_regu)
         self.conv2 = conv3x3(planes, planes)
         self.bn2 = nn.BatchNorm2d(planes)
         self.downsample = downsample
@@ -666,12 +278,12 @@ class BasicBlock_FP(nn.Module):
 
     def forward(self, x):
         residual = x
-        #x = self.binact1(x)
+        x = self.binact1(x)
         out = self.conv1(x)
         out = self.bn1(out)
         out = self.relu(out)
         
-        #out = self.binact2(out)
+        out = self.binact2(out)
         out = self.conv2(out)
         out = self.bn2(out)
 
@@ -682,44 +294,6 @@ class BasicBlock_FP(nn.Module):
         out = self.relu(out)
 
         return out
-
-#class BasicBlock(nn.Module):
-#    expansion=1
-#
-#    def __init__(self, inplanes, planes, loss_regu=0.01, alpha=100,significant_bit=32, bit_threshold=10,  stride=1, downsample=None):
-#        super(BasicBlock, self).__init__()
-#        self.binact1 = BinActLayer(significant_bit, loss_regu)
-#        self.conv1 = conv3x3(inplanes, planes, stride)
-#        self.bn1 = nn.BatchNorm2d(planes)
-#        self.relu = nn.ReLU(inplace=True)
-#        self.binact2 = BinActLayer(significant_bit, loss_regu)
-#        self.conv2 = conv3x3(planes, planes)
-#        self.bn2 = nn.BatchNorm2d(planes)
-#        self.downsample = downsample
-#        self.stride = stride
-#        self.significant_bit = significant_bit
-#        self.bit_threshold = bit_threshold
-#        self.use_sigmoid = True
-#        self.loss_regu = loss_regu
-#
-#    def forward(self, x):
-#        residual = x
-#        x = self.binact1(x)
-#        out = self.conv1(x)
-#        out = self.bn1(out)
-#        out = self.relu(out)
-#        
-#        out = self.binact2(out)
-#        out = self.conv2(out)
-#        out = self.bn2(out)
-#
-#        if self.downsample is not None:
-#            residual = self.downsample(x)
-#
-#        out += residual
-#        out = self.relu(out)
-#
-#        return out
 
 
 class Bottleneck(nn.Module):
