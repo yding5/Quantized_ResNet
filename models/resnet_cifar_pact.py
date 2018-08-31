@@ -33,17 +33,29 @@ class BinActive(torch.autograd.Function):
 
     def forward(self, input):
         self.save_for_backward(input)
+        #input_mod = input.clone()
+        input_mod = torch.clamp(input, self.lb, self.rb)
         input_mod = torch.round(input.data)
-        input_mod.data[input_mod.data.ge(self.rb)] = self.rb
-        input_mod.data[input_mod.data.le(self.lb)] = self.lb
+        #input_mod.data[input_mod.data.ge(self.rb)] = self.rb
+        #input_mod.data[input_mod.data.le(self.lb)] = self.lb
         return input_mod
 
     def backward(self, grad_output):
         input, = self.saved_tensors
         grad_input = grad_output.clone()
-        grad_input[input.ge(self.rb)] = 0
-        grad_input[input.le(self.lb)] = 0
-        return grad_input
+        #print(grad_input[0][0][0])
+        my_grad_input = grad_input*(input.le(self.lb)^1).float()
+        my_grad_input = my_grad_input*(input.ge(self.rb)^1).float()
+        #grad_input[input.ge(self.rb)] = 0.0
+        #grad_input[input.le(self.lb)] = 0.0
+        #print(grad_input[0][0][0])
+        #if not torch.equal(my_grad_input, grad_input):
+        #    print("not good!!")
+        #    print(input.ge(self.rb)[0])
+        #    print(input.le(self.lb)[0])
+        #    print(my_grad_input[0])
+        #    print(grad_input[0])
+        return my_grad_input
 
 class BinActLayer_baseline(nn.Module):
     """ Customized activation layer quantization

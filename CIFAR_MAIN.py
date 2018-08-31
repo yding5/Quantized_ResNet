@@ -123,6 +123,7 @@ def main():
     global args, best_prec
     args = parser.parse_args()
     use_gpu = torch.cuda.is_available()
+    torch.set_printoptions(precision=10)
     if args.act == 'BinAct':
         myBlock = BasicBlock_BinAct
     elif args.act == 'FP':
