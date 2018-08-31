@@ -339,6 +339,7 @@ class BinActive_pact_sigmoid(torch.autograd.Function):
         input_mod.data.mul_((self.activation_threshold)/self.rb)
         return input_mod
 
+
     def backward(self, grad_output):
         input, = self.saved_tensors
         grad_input = grad_output.clone()
@@ -348,17 +349,35 @@ class BinActive_pact_sigmoid(torch.autograd.Function):
         alpha = self.alpha * (self.rb / self.activation_threshold[0])
         buf = torch.add(input*self.rb/self.activation_threshold[0],-0.5)-torch.round(torch.add(input*self.rb/self.activation_threshold[0],-0.5))
         buf.mul_(self.activation_threshold[0]/self.rb)
+        my_buf = torch.add(input*self.rb/self.activation_threshold,-0.5)-torch.round(torch.add(input*self.rb/self.activation_threshold,-0.5))
+        #print('act_threshold',self.activation_threshold[0])
+        #print('rb/act.threshold', self.rb / self.activation_threshold[0])
+        #print('alpha',alpha.data)
+        #print('exp(-alpha/2)',math.exp(-1*alpha/2))
         temp_constant = 1/(2*(1/(1+math.exp(-1*alpha/2)))-1)
+        my_temp_constant = 1/(2*(1/(1+math.exp(-1*self.alpha/2)))-1)
         grad = temp_constant*alpha*torch.exp(-1*alpha*buf)/torch.pow(torch.add(torch.exp(-1*alpha*buf),1),2)
+        my_grad = my_temp_constant*self.alpha*torch.exp(-1*self.alpha*buf)/torch.pow(torch.add(torch.exp(-1*self.alpha*buf),1),2)
+        my_grad_input = grad_input*my_grad
         grad_input.data.mul_(grad/alpha) 
+        #if torch.equal(my_grad_input, grad_input):
+        #    print('good')
+        #else:
+        #    print('not good')
+        #    print(my_grad_input.data[0][0][0])
+        #    print(grad_input.data[0][0][0])
         """fix bug by dividing alpha on 08/21/2018, by WW """
-
         grad_alpha = grad_output.clone()
         grad_alpha[input.le(self.activation_threshold[0])] = 0
         grad_pact = torch.sum(grad_alpha)+2*self.activation_regu*self.activation_threshold[0]
+        grad_pact = torch.sum(grad_alpha)+self.activation_regu*self.activation_threshold[0]**2
+        if self.activation_threshold.data<0.5:
+            print('activation_threshold too small!!!!')
+        #print(grad_pact)
+        #print(self.activation_threshold)
         self.activation_threshold -= self.activation_lr * grad_pact
 
-        return grad_input
+        return my_grad_input
 
 class BinActLayer_pact_sigmoid(nn.Module):
     """ Customized activation layer quantization
@@ -374,7 +393,8 @@ class BinActLayer_pact_sigmoid(nn.Module):
         self.loss_regu = loss_regu
         self.alpha = alpha
         self.pact_alpha = torch.cuda.FloatTensor(1)
-        self.pact_alpha[0] = pow(2,significant_bit)-1
+#        self.pact_alpha[0] = pow(2,significant_bit)-1
+        self.pact_alpha[0] = 10
 
     def forward(self,input):
         return BinActive_pact_sigmoid(significant_bit=self.significant_bit, loss_regu=self.loss_regu, alpha=self.alpha, pact_alpha=self.pact_alpha)(input)
