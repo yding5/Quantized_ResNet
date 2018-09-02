@@ -34,18 +34,19 @@ class BinActive(torch.autograd.Function):
     def forward(self, input):
         self.save_for_backward(input)
         #input_mod = input.clone()
-        input_mod = torch.clamp(input, self.lb, self.rb)
-        input_mod = torch.round(input.data)
+        #input_mod = torch.clamp(input, self.lb, self.rb)
+        input_mod = torch.round(torch.clamp(input, self.lb, self.rb))
         #input_mod.data[input_mod.data.ge(self.rb)] = self.rb
         #input_mod.data[input_mod.data.le(self.lb)] = self.lb
+        #return torch.round(torch.clamp(input, self.lb, self.rb))
         return input_mod
 
     def backward(self, grad_output):
         input, = self.saved_tensors
         grad_input = grad_output.clone()
         #print(grad_input[0][0][0])
-        my_grad_input = grad_input*(input.le(self.lb)^1).float()
-        my_grad_input = my_grad_input*(input.ge(self.rb)^1).float()
+        grad_input = grad_input*(input.le(self.lb)^1).float()
+        grad_input = grad_input*(input.ge(self.rb)^1).float()
         #grad_input[input.ge(self.rb)] = 0.0
         #grad_input[input.le(self.lb)] = 0.0
         #print(grad_input[0][0][0])
@@ -55,7 +56,7 @@ class BinActive(torch.autograd.Function):
         #    print(input.le(self.lb)[0])
         #    print(my_grad_input[0])
         #    print(grad_input[0])
-        return my_grad_input
+        return grad_input
 
 class BinActLayer_baseline(nn.Module):
     """ Customized activation layer quantization
@@ -133,9 +134,11 @@ class BinActive_sigmoid(torch.autograd.Function):
 
     def forward(self, input):
         self.save_for_backward(input)
-        input_mod = torch.round(input.data)
-        input_mod.data[input_mod.data.ge(self.rb)] = self.rb
-        input_mod.data[input_mod.data.le(self.lb)] = self.lb
+        #input_mod = torch.clamp(input, self.lb, self.rb)
+        input_mod = torch.round(torch.clamp(input, self.lb, self.rb))
+        #input_mod = torch.round(input.data)
+        #input_mod.data[input_mod.data.ge(self.rb)] = self.rb
+        #input_mod.data[input_mod.data.le(self.lb)] = self.lb
         return input_mod
 
     def backward(self, grad_output):
@@ -146,8 +149,10 @@ class BinActive_sigmoid(torch.autograd.Function):
         grad = temp_constant*self.alpha*torch.exp(-1*self.alpha*buf)/torch.pow(torch.add(torch.exp(-1*self.alpha*buf),1),2)
         grad_input.data.mul_(grad)
 
-        grad_input[input.ge(self.rb)] = 0
-        grad_input[input.le(self.lb)] = 0
+        grad_input = grad_input*(input.le(self.lb)^1).float()
+        grad_input = grad_input*(input.ge(self.rb)^1).float()
+        #grad_input[input.ge(self.rb)] = 0
+        #grad_input[input.le(self.lb)] = 0
         return grad_input
 
 class BinActLayer_sigmoid(nn.Module):
@@ -237,9 +242,11 @@ class BinActive_pact(torch.autograd.Function):
         input_mod = input.clone()
         self.save_for_backward(input)
         input_mod.data.mul_(self.rb/(1e-6+self.activation_threshold))
-        input_mod.data = torch.round(input_mod.data)
-        input_mod.data[input_mod.ge(self.rb)] = self.rb
-        input_mod.data[input_mod.le(self.lb)] = self.lb
+        #input_mod = torch.clamp(input_mod, self.lb, self.rb)#not checked
+        input_mod = torch.round(torch.clamp(input_mod, self.lb, self.rb))##not checked
+        #input_mod.data = torch.round(input_mod.data)
+        #input_mod.data[input_mod.ge(self.rb)] = self.rb
+        #input_mod.data[input_mod.le(self.lb)] = self.lb
         input_mod.data.mul_((self.activation_threshold)/self.rb)
         return input_mod
         
@@ -247,11 +254,15 @@ class BinActive_pact(torch.autograd.Function):
         
         input, = self.saved_tensors
         grad_input = grad_output.clone()
-        grad_input[input.ge(self.activation_threshold[0])] = 0
-        grad_input[input.le(0)] = 0
+        #grad_input[input.ge(self.activation_threshold[0])] = 0
+        #grad_input[input.le(0)] = 0
          
+        grad_input = grad_input*(input.le(0)^1).float()
+        grad_input = grad_input*(input.ge(self.activation_threshold[0])^1).float()
+        
         grad_alpha = grad_output.clone()
-        grad_alpha[input.le(self.activation_threshold[0])] = 0
+        #grad_alpha[input.le(self.activation_threshold[0])] = 0
+        grad_alpha = grad_alpha*(input.le(self.activation_threshold[0])^1).float()
         grad_pact = torch.sum(grad_alpha)+2*self.activation_regu*self.activation_threshold[0]
         self.activation_threshold -= self.activation_lr * grad_pact
 

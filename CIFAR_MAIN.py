@@ -76,6 +76,7 @@ print("use_alpha_decay: ", args.use_alpha_decay)
 print("start_alpha: ",args.start_alpha)
 print("end_alphaL ", args.end_alpha)
 print("Quantization Type", args.act)
+print("batch_size", args.batch_size)
 
 
 with open(args.log_file,'a') as log:
@@ -98,6 +99,7 @@ with open(args.log_file,'a') as log:
     print("start_alpha: ",args.start_alpha, file=log)
     print("end_alphaL ", args.end_alpha, file=log)
     print("Quantization Type", args.act, file=log)
+    print("batch_size", args.batch_size, file=log)
 
 
 def getname(model):
