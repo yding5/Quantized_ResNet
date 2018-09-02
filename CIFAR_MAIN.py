@@ -48,11 +48,11 @@ parser.add_argument('--loss_regu', help='relaxation parameter laied on loss regl
 parser.add_argument('--weight_thres', help='a weight threshold parameter using memorization', action='store', type=float,
                     default=0.1)
 parser.add_argument('--use_alpha_decay', help='enable alpha decay in sigmoid gradient', default=False, action='store_true')
-parser.add_argument('--use_quadratic_decay', help='enable quadratic alpha decay instead of linear decay', default=False, action='store_true')
-parser.add_argument('--start_alpha', help='starting scaling of sigmoid', action='store', type=float,
-                    default=100)
-parser.add_argument('--end_alpha', help='ending scaling of sigmoid', action='store', type=float,
-                    default=100)
+#parser.add_argument('--use_quadratic_decay', help='enable quadratic alpha decay instead of linear decay', default=False, action='store_true')
+parser.add_argument('--start_alpha', help='starting scaling of sigmoid', action='store', type=float, default=100)
+parser.add_argument('--end_alpha', help='ending scaling of sigmoid', action='store', type=float, default=100)
+parser.add_argument('--alpha_decay_type', default='1', type=int, help='type of alpha decay strategy')
+parser.add_argument('--lr_type', default='1', type=int, help='type of lr decay strategy')
 
 args = parser.parse_args()
 
@@ -76,6 +76,8 @@ print("use_alpha_decay: ", args.use_alpha_decay)
 print("start_alpha: ",args.start_alpha)
 print("end_alphaL ", args.end_alpha)
 print("Quantization Type", args.act)
+print("alpha decay Type", args.alpha_decay_type)
+print("lr decay Type", args.lr_type)
 print("batch_size", args.batch_size)
 
 
@@ -100,6 +102,8 @@ with open(args.log_file,'a') as log:
     print("end_alphaL ", args.end_alpha, file=log)
     print("Quantization Type", args.act, file=log)
     print("batch_size", args.batch_size, file=log)
+    print("alpha decay Type", args.alpha_decay_type, file=log)
+    print("lr decay Type", args.lr_type, file=log)
 
 
 def getname(model):
@@ -216,7 +220,7 @@ def main():
             print('model type unrecognized...')
             return
         """
-        model_type = 1
+        model_type = args.lr_type
         model = nn.DataParallel(model).cuda()
         criterion = nn.CrossEntropyLoss().cuda()
         if args.use_quantize_weight==False:
@@ -354,33 +358,22 @@ def train(trainloader, model, criterion, optimizer, epoch, weight_thres):
 
     # TODO: automatically adjustify sigmoid factor for different network
     # scaled sigmoid argument increased as epochs, need to customized this function manually
+    current_alpha = adjust_alpha(epoch, args.alpha_decay_type, args.start_alpha, args.end_alpha)
     if args.use_alpha_decay: 
         for item in model.module.layer1.modules():
             if isinstance(item, BasicBlock_BinAct_pact_sigmoid_lr0) or isinstance(item, BasicBlock_BinAct_pact_sigmoid) or isinstance(item, BasicBlock_BinAct) or isinstance(item, BasicBlock_BinAct_pact) or isinstance(item, BasicBlock_BinAct_sig):
-                if args.use_quadratic_decay:
-                    item.binact1.alpha = args.start_alpha + (epoch/args.epochs)**2*(args.end_alpha-args.start_alpha)
-                    item.binact2.alpha = args.start_alpha + (epoch/args.epochs)**2*(args.end_alpha-args.start_alpha)
-                else:
-                    item.binact1.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
-                    item.binact2.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
+                item.binact1.alpha = current_alpha
+                item.binact2.alpha = current_alpha
         for item in model.module.layer2.modules():
             #if isinstance(item, BasicBlock):
             if isinstance(item, BasicBlock_BinAct_pact_sigmoid_lr0) or isinstance(item, BasicBlock_BinAct_pact_sigmoid) or isinstance(item, BasicBlock_BinAct) or isinstance(item, BasicBlock_BinAct_pact) or isinstance(item, BasicBlock_BinAct_sig):
-                if args.use_quadratic_decay:
-                    item.binact1.alpha = args.start_alpha + (epoch/args.epochs)**2*(args.end_alpha-args.start_alpha)
-                    item.binact2.alpha = args.start_alpha + (epoch/args.epochs)**2*(args.end_alpha-args.start_alpha)
-                else:
-                    item.binact1.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
-                    item.binact2.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
+                item.binact1.alpha = current_alpha
+                item.binact2.alpha = current_alpha
         for item in model.module.layer3.modules():
             #if isinstance(item, BasicBlock):
             if isinstance(item, BasicBlock_BinAct_pact_sigmoid_lr0) or isinstance(item, BasicBlock_BinAct_pact_sigmoid) or isinstance(item, BasicBlock_BinAct) or isinstance(item, BasicBlock_BinAct_pact) or isinstance(item, BasicBlock_BinAct_sig):
-                if args.use_quadratic_decay:
-                    item.binact1.alpha = args.start_alpha + (epoch/args.epochs)**2*(args.end_alpha-args.start_alpha)
-                    item.binact2.alpha = args.start_alpha + (epoch/args.epochs)**2*(args.end_alpha-args.start_alpha)
-                else:
-                    item.binact1.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
-                    item.binact2.alpha = args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
+                item.binact1.alpha = current_alpha
+                item.binact2.alpha = current_alpha
 
     for i, (input, target) in enumerate(trainloader):
         # measure data loading time
@@ -488,6 +481,21 @@ def save_checkpoint(state, is_best, fdir):
         shutil.copyfile(filepath, os.path.join(fdir, 'model_best.pth.tar'))
 
 
+def adjust_alpha(epoch, alpha_decay_type, start_alpha, end_alpha):
+    if alpha_decay_type == 1:
+        return args.start_alpha + epoch*(args.end_alpha-args.start_alpha)/args.epochs
+    elif alpha_decay_type ==2:
+        return args.start_alpha + (epoch/args.epochs)**2*(args.end_alpha-args.start_alpha)
+    elif alpha_decay_type ==4:
+        if epoch < 200:
+            return 0.000001
+        else:
+            return args.start_alpha + ((epoch-200)/(args.epochs-200))**2*(args.end_alpha-args.start_alpha)
+    else:
+        print("unknown alpha type")
+    return 0.0001 
+
+
 def adjust_learning_rate(optimizer, epoch, model_type):
     """For resnet, the lr starts from 0.1, and is divided by 10 at 80 and 120 epochs"""
     if model_type == 1:
@@ -534,6 +542,34 @@ def adjust_learning_rate(optimizer, epoch, model_type):
             lr = args.lr * 0.1
         else:
             lr = args.lr * 0.01
+    elif model_type == 4:
+        if epoch < 60:
+            lr = args.lr
+        elif epoch < 120:
+            lr = args.lr * 0.1
+        elif epoch < 180:
+            lr = args.lr * 0.01 
+        elif epoch < 200:
+            lr = args.lr * 0.001
+        elif epoch < 250:
+            lr = args.lr * 0.1
+        elif epoch < 300:
+            lr = args.lr * 0.01
+        else:
+            lr = args.lr * 0.001
+    elif model_type == 5:
+        if epoch < 60:
+            lr = args.lr
+        elif epoch < 120:
+            lr = args.lr * 0.1
+        elif epoch < 180:
+            lr = args.lr * 0.01 
+        elif epoch < 200:
+            lr = args.lr * 0.001
+        elif epoch < 250:
+            lr = args.lr * 0.01
+        else:
+            lr = args.lr * 0.001
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
     optimizer.lr = lr
