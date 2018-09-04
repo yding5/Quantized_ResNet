@@ -1078,6 +1078,11 @@ def preact_resnet1001_cifar(**kwargs):
     return model
 
 
+def preact_resnet18_ImageNet(**kwargs):
+    model = ResNet_18(PreActBottleneck, [2, 2, 2, 2], **kwargs)
+    return model
+
+
 if __name__ == '__main__':
     net = preact_resnet110_cifar()
     y = net(torch.autograd.Variable(torch.randn(1, 3, 32, 32)))

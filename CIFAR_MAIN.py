@@ -220,7 +220,7 @@ def main():
             print('model type unrecognized...')
             return
         """
-        model_type = args.lr_type
+        #model_type = args.lr_type
         model = nn.DataParallel(model).cuda()
         criterion = nn.CrossEntropyLoss().cuda()
         if args.use_quantize_weight==False:
@@ -274,7 +274,7 @@ def main():
             ]))
         testloader = torch.utils.data.DataLoader(test_dataset, batch_size=100, shuffle=False, num_workers=2)
     # CIFAR100
-    else:
+    elif args.cifar_type == 10:
         print('=> loading cifar100 data...')
         normalize = transforms.Normalize(mean=[0.507, 0.487, 0.441], std=[0.267, 0.256, 0.276])
 
@@ -299,12 +299,37 @@ def main():
                 normalize,
             ]))
         testloader = torch.utils.data.DataLoader(test_dataset, batch_size=100, shuffle=False, num_workers=2)
+    elif args.cifar_type == 100:
+        traindir = '~/raw-data/train'
+	valdir = '~/raw-data/validation'
+	normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                     std=[0.229, 0.224, 0.225])
+
+        train_dataset = datasets.ImageFolder(traindir,  transforms.Compose([ transforms.RandomResizedCrop(224),  transforms.RandomHorizontalFlip(), transforms.ToTensor(), normalize,  ]))
+
+    #if args.distributed:
+    #    train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
+    #else:
+        train_sampler = None
+
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None), num_workers=2, pin_memory=True, sampler=train_sampler)
+
+        val_loader = torch.utils.data.DataLoader( datasets.ImageFolder(valdir, transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            normalize,    ])),
+        batch_size=args.batch_size, shuffle=False,
+        num_workers=2, pin_memory=True)
+    else:
+        print('unknown cifar type')
+        return
 
     if args.evaluate:
         validate(testloader, model, criterion)
         return
     for epoch in range(args.start_epoch, args.epochs):
-        adjust_learning_rate(optimizer, epoch, model_type)
+        adjust_learning_rate(optimizer, epoch, args.lr_type)
         # print(model.bn1.track_running_stats)
 
         # train for one epoch
@@ -496,9 +521,9 @@ def adjust_alpha(epoch, alpha_decay_type, start_alpha, end_alpha):
     return 0.0001 
 
 
-def adjust_learning_rate(optimizer, epoch, model_type):
+def adjust_learning_rate(optimizer, epoch, lr_type):
     """For resnet, the lr starts from 0.1, and is divided by 10 at 80 and 120 epochs"""
-    if model_type == 1:
+    if lr_type == 1:
         """    
         if epoch < 80:
             lr = args.lr
@@ -526,7 +551,7 @@ def adjust_learning_rate(optimizer, epoch, model_type):
             lr = args.lr * 0.001
         
 
-    elif model_type == 2:
+    elif lr_type == 2:
         if epoch < 60:
             lr = args.lr
         elif epoch < 120:
@@ -535,14 +560,14 @@ def adjust_learning_rate(optimizer, epoch, model_type):
             lr = args.lr * 0.04
         else:
             lr = args.lr * 0.008
-    elif model_type == 3:
+    elif lr_type == 3:
         if epoch < 150:
             lr = args.lr
         elif epoch < 225:
             lr = args.lr * 0.1
         else:
             lr = args.lr * 0.01
-    elif model_type == 4:
+    elif lr_type == 4:
         if epoch < 60:
             lr = args.lr
         elif epoch < 120:
@@ -557,7 +582,7 @@ def adjust_learning_rate(optimizer, epoch, model_type):
             lr = args.lr * 0.01
         else:
             lr = args.lr * 0.001
-    elif model_type == 5:
+    elif lr_type == 5:
         if epoch < 60:
             lr = args.lr
         elif epoch < 120:
