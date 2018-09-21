@@ -471,7 +471,21 @@ def validate(val_loader, model, criterion):
     raw_output = []
     raw_target = []
 
+    M0H1One = set(list(np.load('M0H1One.npy')))
+    M0H1Three = set(list(np.load('M0H1Three.npy')))
+    M0FH2One = set(list(np.load('M0FH2One.npy')))
+    M0FH2Three = set(list(np.load('M0FH2Three.npy')))
+
+
+
     for i, (input, target) in enumerate(val_loader):
+
+        for ii in range(100):
+            ID = i*100 + ii
+            if ID in M0H1One:
+                np.save('M0H1One/'+str(ID),input[ii].numpy()) 
+
+
         input, target = input.cuda(), target.cuda()
         input_var = Variable(input)
         target_var = Variable(target)

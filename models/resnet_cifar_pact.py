@@ -77,6 +77,43 @@ class BinActLayer_baseline(nn.Module):
     def forward(self,input):
         return BinActive(significant_bit=self.significant_bit, loss_regu=self.loss_regu, alpha=self.alpha, pact_alpha=self.pact_alpha)(input)
     
+class PlainBlock_BinAct(nn.Module):
+    expansion=1
+
+    def __init__(self, inplanes, planes, loss_regu=0.01, alpha=100,significant_bit=32, bit_threshold=10,  stride=1, downsample=None):
+        super(PlainBlock_BinAct, self).__init__()
+        self.binact1 = BinActLayer_baseline(significant_bit, loss_regu)
+        self.conv1 = conv3x3(inplanes, planes, stride)
+        self.bn1 = nn.BatchNorm2d(planes)
+        self.relu = nn.ReLU(inplace=True)
+        self.binact2 = BinActLayer_baseline(significant_bit, loss_regu)
+        self.conv2 = conv3x3(planes, planes)
+        self.bn2 = nn.BatchNorm2d(planes)
+        self.downsample = downsample
+        self.stride = stride
+        self.significant_bit = significant_bit
+        self.bit_threshold = bit_threshold
+        self.use_sigmoid = True
+        self.loss_regu = loss_regu
+
+    def forward(self, x):
+        #residual = x
+        x = self.binact1(x)
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+        
+        out = self.binact2(out)
+        out = self.conv2(out)
+        out = self.bn2(out)
+
+        #if self.downsample is not None:
+        #    residual = self.downsample(x)
+
+        #out += residual
+        out = self.relu(out)
+
+        return out
     
 class BasicBlock_BinAct(nn.Module):
     expansion=1
@@ -144,6 +181,11 @@ class BinActive_sigmoid(torch.autograd.Function):
     def backward(self, grad_output):
         input, = self.saved_tensors
         grad_input = grad_output.clone()
+        if self.alpha==0.0:
+            grad_input = grad_input*(input.le(self.lb)^1).float()
+            grad_input = grad_input*(input.ge(self.rb)^1).float()
+            return grad_input
+        
         buf = torch.add(input,-0.5)-torch.round(torch.add(input,-0.5))
         temp_constant = 1/(2*(1/(1+math.exp(-1*self.alpha/2)))-1)
         grad = temp_constant*self.alpha*torch.exp(-1*self.alpha*buf)/torch.pow(torch.add(torch.exp(-1*self.alpha*buf),1),2)
@@ -173,6 +215,46 @@ class BinActLayer_sigmoid(nn.Module):
 
     def forward(self,input):
         return BinActive_sigmoid(significant_bit=self.significant_bit, loss_regu=self.loss_regu, alpha=self.alpha, pact_alpha=self.pact_alpha)(input)
+
+
+
+class PlainBlock_BinAct_sig(nn.Module):
+    expansion=1
+
+    def __init__(self, inplanes, planes, loss_regu=0.01, alpha=100,significant_bit=32, bit_threshold=10,  stride=1, downsample=None):
+        super(PlainBlock_BinAct_sig, self).__init__()
+        self.binact1 = BinActLayer_sigmoid(significant_bit, loss_regu)
+        self.conv1 = conv3x3(inplanes, planes, stride)
+        self.bn1 = nn.BatchNorm2d(planes)
+        self.relu = nn.ReLU(inplace=True)
+        self.binact2 = BinActLayer_sigmoid(significant_bit, loss_regu)
+        self.conv2 = conv3x3(planes, planes)
+        self.bn2 = nn.BatchNorm2d(planes)
+        self.downsample = downsample
+        self.stride = stride
+        self.significant_bit = significant_bit
+        self.bit_threshold = bit_threshold
+        self.use_sigmoid = True
+        self.loss_regu = loss_regu
+
+    def forward(self, x):
+        #residual = x
+        x = self.binact1(x)
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+        
+        out = self.binact2(out)
+        out = self.conv2(out)
+        out = self.bn2(out)
+
+        #if self.downsample is not None:
+        #    residual = self.downsample(x)
+
+        #out += residual
+        out = self.relu(out)
+
+        return out
 
 class BasicBlock_BinAct_sig(nn.Module):
     expansion=1
