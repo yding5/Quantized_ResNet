@@ -484,6 +484,12 @@ def validate(val_loader, model, criterion):
             ID = i*100 + ii
             if ID in M0H1One:
                 np.save('M0H1One/'+str(ID),input[ii].numpy()) 
+            if ID in M0H1Three:
+                np.save('M0H1Three/'+str(ID),input[ii].numpy()) 
+            if ID in M0FH2One:
+                np.save('M0FH2One/'+str(ID),input[ii].numpy()) 
+            if ID in M0FH2Three:
+                np.save('M0FH2Three/'+str(ID),input[ii].numpy()) 
 
 
         input, target = input.cuda(), target.cuda()
